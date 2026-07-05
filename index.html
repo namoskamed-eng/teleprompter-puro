@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<title>Teleprompter Puro</title>
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b0f14">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+:root{
+  --bg:#000000; --text:#ffffff; --accent:#22c55e; --accent2:#3b82f6;
+  --panel:#12161c; --panel2:#1b2129; --border:#2a323d; --muted:#8b96a3;
+  --danger:#ef4444; --radius:14px;
+  --font-size:42px; --line-height:1.4; --letter-spacing:0px;
+  --col-width:86%; --align:center;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{height:100%; margin:0; overscroll-behavior:none;}
+body{
+  background:var(--panel); color:#fff;
+  font-family:-apple-system, BlinkMacSystemFont, 'SF Pro', system-ui, sans-serif;
+  overflow:hidden; position:fixed; inset:0; width:100vw; height:100dvh;
+  padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom);
+  user-select:none;
+}
+.screen{position:absolute; inset:0; display:none; flex-direction:column; height:100%;}
+.screen.active{display:flex;}
+
+/* ===== TOP BAR ===== */
+.topbar{display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); flex-shrink:0;}
+.topbar h1{font-size:19px; margin:0; font-weight:700;}
+.topbar .sub{font-size:12px; color:var(--muted); margin-top:2px;}
+.iconbtn{background:var(--panel2); border:1px solid var(--border); color:#fff; border-radius:10px; width:40px; height:40px; font-size:18px; display:flex; align-items:center; justify-content:center;}
+.iconbtn:active{opacity:0.6;}
+
+/* ===== HOME (lista de roteiros) ===== */
+#screen-home .content{flex:1; overflow-y:auto; padding:12px 16px 90px;}
+.script-card{background:var(--panel2); border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin-bottom:10px; display:flex; align-items:center; gap:12px;}
+.script-card .info{flex:1; min-width:0;}
+.script-card .title{font-size:16px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.script-card .meta{font-size:12px; color:var(--muted); margin-top:3px;}
+.script-card .actions{display:flex; gap:8px;}
+.script-card button{background:none; border:none; color:var(--muted); font-size:18px; padding:6px;}
+.fab{position:absolute; right:18px; bottom:calc(18px + env(safe-area-inset-bottom)); width:58px; height:58px; border-radius:29px; background:var(--accent); color:#04140a; font-size:28px; border:none; box-shadow:0 6px 18px rgba(34,197,94,.4); display:flex; align-items:center; justify-content:center;}
+.empty-hint{color:var(--muted); text-align:center; padding:60px 20px; font-size:14px; line-height:1.6;}
+
+/* ===== EDITOR ===== */
+#screen-editor .content{flex:1; display:flex; flex-direction:column; padding:12px 16px;}
+#editor-title{background:var(--panel2); border:1px solid var(--border); color:#fff; border-radius:10px; padding:12px; font-size:16px; font-weight:600; margin-bottom:10px;}
+#editor-body{flex:1; background:var(--panel2); border:1px solid var(--border); color:#fff; border-radius:10px; padding:14px; font-size:17px; line-height:1.5; resize:none; font-family:inherit;}
+.editor-footer{display:flex; justify-content:space-between; align-items:center; padding-top:10px; font-size:12px; color:var(--muted);}
+.hint-marker{font-size:11px; color:var(--muted); padding:6px 0 0;}
+
+/* ===== BOTOES GERAIS ===== */
+.btn{background:var(--panel2); border:1px solid var(--border); color:#fff; border-radius:10px; padding:12px 16px; font-size:15px; font-weight:600;}
+.btn.primary{background:var(--accent); color:#04140a; border-color:var(--accent);}
+.btn.danger{background:var(--danger); color:#fff; border-color:var(--danger);}
+.btn:active{opacity:0.7;}
+.row{display:flex; gap:10px;}
+
+/* ===== PROMPTER (leitura) ===== */
+#screen-prompter{background:var(--bg);}
+#prompter-viewport{flex:1; overflow:hidden; position:relative;}
+#prompter-scroll{
+  position:absolute; left:50%; top:0; width:var(--col-width);
+  transform:translateX(-50%);
+  padding-top:60vh; padding-bottom:80vh;
+}
+#prompter-scroll.mirror-h{ transform:translateX(-50%) scaleX(-1); }
+#prompter-scroll.mirror-v{ }
+#prompter-viewport.mv #prompter-scroll{ transform:translateX(-50%) scaleY(-1); }
+#prompter-viewport.mv.mh #prompter-scroll{ transform:translateX(-50%) scale(-1,-1); }
+#prompter-text{
+  color:var(--text); font-size:var(--font-size); line-height:var(--line-height);
+  letter-spacing:var(--letter-spacing); text-align:var(--align);
+  font-family:-apple-system, system-ui, sans-serif; white-space:pre-wrap; word-wrap:break-word;
+}
+#prompter-text.font-serif{font-family:Georgia, 'Times New Roman', serif;}
+#prompter-text.font-mono{font-family:'SF Mono', Menlo, monospace;}
+#prompter-text .marker{display:inline-block; width:0; height:0;}
+#prompter-text .marker-tag{color:var(--accent); font-size:0.5em; vertical-align:middle; opacity:0.8;}
+
+.focus-guide{position:absolute; left:0; right:0; height:1px; background:var(--accent); opacity:0; pointer-events:none; box-shadow:0 0 8px var(--accent);}
+.focus-guide.on{opacity:0.9;}
+.dim-panel{position:absolute; left:0; right:0; pointer-events:none; background:linear-gradient(var(--dim-dir), rgba(0,0,0,var(--dim,0.55)), rgba(0,0,0,0));}
+#dim-top{top:0;}
+#dim-bottom{bottom:0; --dim-dir:to top;}
+
+/* Overlay controles do prompter */
+.prompter-top{position:absolute; top:0; left:0; right:0; display:flex; justify-content:space-between; align-items:center; padding:10px 14px; z-index:5; transition:opacity .25s;}
+.prompter-top.hidden{opacity:0; pointer-events:none;}
+.pill{background:rgba(15,18,23,.92); backdrop-filter:blur(6px); border:1px solid rgba(255,255,255,.12); border-radius:20px; padding:6px 12px; font-size:12px; color:#fff; display:flex; align-items:center; gap:6px;}
+.pill.gp-on{color:var(--accent); border-color:var(--accent);}
+.progress-wrap{position:absolute; top:0; left:0; right:0; height:3px; background:rgba(255,255,255,.08); z-index:6;}
+.progress-bar{height:100%; background:var(--accent); width:0%; transition:width .1s linear;}
+
+.prompter-bottom{position:absolute; bottom:0; left:0; right:0; z-index:5; padding:10px 14px calc(14px + env(safe-area-inset-bottom)); transition:opacity .25s;}
+.prompter-bottom.hidden{opacity:0; pointer-events:none;}
+.ctrl-row{display:flex; gap:8px; justify-content:center; align-items:center; margin-bottom:8px; flex-wrap:wrap;}
+.ctrl-btn{background:rgba(15,18,23,.94); border:1px solid rgba(255,255,255,.15); color:#fff; border-radius:12px; width:52px; height:52px; font-size:20px; display:flex; align-items:center; justify-content:center;}
+.ctrl-btn.big{width:68px; height:68px; font-size:26px; background:var(--accent); color:#04140a; border-color:var(--accent);}
+.ctrl-btn:active{opacity:0.6;}
+.slider-row{display:flex; align-items:center; gap:10px; padding:4px 10px;}
+.slider-row label{font-size:11px; color:var(--muted); width:60px; flex-shrink:0;}
+input[type=range]{flex:1; accent-color:var(--accent);}
+
+/* countdown overlay */
+#countdown-overlay{position:absolute; inset:0; background:rgba(0,0,0,.85); display:none; align-items:center; justify-content:center; z-index:20; font-size:120px; font-weight:800; color:var(--accent);}
+#countdown-overlay.active{display:flex;}
+
+/* toast */
+#toast{position:absolute; left:50%; bottom:120px; transform:translate(-50%,20px); background:rgba(20,24,30,.92); border:1px solid var(--border); color:#fff; padding:10px 18px; border-radius:20px; font-size:13px; opacity:0; transition:all .25s; z-index:30; pointer-events:none; white-space:nowrap;}
+#toast.show{opacity:1; transform:translate(-50%,0);}
+
+/* ===== SETTINGS ===== */
+#screen-settings .content{flex:1; overflow-y:auto; padding:0 16px 40px;}
+.tabs{display:flex; gap:6px; padding:10px 16px; border-bottom:1px solid var(--border); flex-shrink:0; overflow-x:auto;}
+.tab{background:var(--panel2); border:1px solid var(--border); color:var(--muted); border-radius:16px; padding:8px 14px; font-size:13px; font-weight:600; white-space:nowrap;}
+.tab.active{background:var(--accent); color:#04140a; border-color:var(--accent);}
+.tabpanel{display:none;}
+.tabpanel.active{display:block;}
+.section-title{font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin:22px 0 10px;}
+.setting-row{background:var(--panel2); border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:8px;}
+.setting-row .lbl{display:flex; justify-content:space-between; font-size:14px; margin-bottom:6px;}
+.setting-row .lbl .val{color:var(--accent); font-weight:600;}
+.seg{display:flex; background:var(--panel); border-radius:10px; padding:3px; gap:3px;}
+.seg button{flex:1; background:none; border:none; color:var(--muted); padding:8px; border-radius:8px; font-size:13px; font-weight:600;}
+.seg button.on{background:var(--accent); color:#04140a;}
+.toggle-sw{width:46px; height:28px; border-radius:14px; background:var(--panel); border:1px solid var(--border); position:relative; flex-shrink:0;}
+.toggle-sw::after{content:''; position:absolute; width:22px; height:22px; border-radius:11px; background:var(--muted); top:2px; left:2px; transition:all .2s;}
+.toggle-sw.on{background:var(--accent);}
+.toggle-sw.on::after{background:#fff; left:21px;}
+.color-swatches{display:flex; gap:8px; flex-wrap:wrap;}
+.swatch{width:38px; height:38px; border-radius:10px; border:2px solid transparent;}
+.swatch.sel{border-color:var(--accent);}
+
+/* Controle remoto */
+.gp-status{display:flex; align-items:center; gap:10px; background:var(--panel2); border:1px solid var(--border); border-radius:12px; padding:14px; margin-bottom:12px;}
+.gp-dot{width:10px; height:10px; border-radius:6px; background:var(--danger); flex-shrink:0;}
+.gp-dot.on{background:var(--accent); box-shadow:0 0 8px var(--accent);}
+.gp-live{display:grid; grid-template-columns:repeat(auto-fill,minmax(46px,1fr)); gap:6px; margin-bottom:14px;}
+.gp-live .cell{background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:8px 4px; text-align:center; font-size:10px; color:var(--muted);}
+.gp-live .cell.hot{background:var(--accent); color:#04140a; border-color:var(--accent);}
+.map-row{display:flex; align-items:center; gap:8px; background:var(--panel2); border:1px solid var(--border); border-radius:12px; padding:10px 12px; margin-bottom:8px;}
+.map-row .inp-label{font-size:13px; font-weight:600; width:100px; flex-shrink:0;}
+.map-row select{flex:1; background:var(--panel); color:#fff; border:1px solid var(--border); border-radius:8px; padding:8px; font-size:13px;}
+.map-row .del{color:var(--danger); font-size:18px; padding:4px 8px; flex-shrink:0;}
+#learn-modal{position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:50; display:none; align-items:center; justify-content:center; flex-direction:column; text-align:center; padding:30px;}
+#learn-modal.active{display:flex;}
+#learn-modal .pulse{width:80px; height:80px; border-radius:50%; border:3px solid var(--accent); margin-bottom:20px; animation:pulse 1.2s infinite;}
+@keyframes pulse{0%{transform:scale(.9); opacity:1;} 70%{transform:scale(1.3); opacity:0;} 100%{opacity:0;}}
+
+/* Scripts list settings tab */
+select, textarea, input[type=text], input[type=number]{font-family:inherit;}
+::-webkit-scrollbar{display:none;}
+</style>
+</head>
+<body>
+
+<!-- ===================== HOME ===================== -->
+<div id="screen-home" class="screen active" style="position:relative;">
+  <div class="topbar">
+    <div>
+      <h1>Teleprompter</h1>
+      <div class="sub" id="home-sub">seus roteiros</div>
+    </div>
+    <button class="iconbtn" onclick="openSettings()">⚙️</button>
+  </div>
+  <div class="content" id="home-list"></div>
+  <button class="fab" onclick="createScript()">+</button>
+</div>
+
+<!-- ===================== EDITOR ===================== -->
+<div id="screen-editor" class="screen">
+  <div class="topbar">
+    <button class="iconbtn" onclick="closeEditor()">←</button>
+    <div class="sub" id="editor-count">0 palavras</div>
+    <button class="iconbtn" onclick="goPrompterFromEditor()">▶</button>
+  </div>
+  <div class="content">
+    <input id="editor-title" type="text" placeholder="Título do roteiro" oninput="saveEditor()">
+    <textarea id="editor-body" placeholder="Cole ou digite seu roteiro aqui...&#10;&#10;Dica: escreva [[nome]] em qualquer linha para criar uma marcação de navegação rápida." oninput="saveEditor()"></textarea>
+    <div class="hint-marker">Marcações: escreva <b>[[nome]]</b> numa linha para poder pular direto pra ela durante a leitura.</div>
+  </div>
+</div>
+
+<!-- ===================== PROMPTER ===================== -->
+<div id="screen-prompter" class="screen">
+  <div class="progress-wrap"><div class="progress-bar" id="progress-bar"></div></div>
+  <div class="prompter-top" id="prompter-top">
+    <div class="pill" onclick="exitPrompter()">← <span id="ptop-title">Roteiro</span></div>
+    <div style="display:flex; gap:6px;">
+      <div class="pill" id="gp-pill">🎮 —</div>
+      <div class="pill" id="time-pill">00:00 / 00:00</div>
+    </div>
+  </div>
+  <div id="prompter-viewport">
+    <div class="dim-panel" id="dim-top"></div>
+    <div class="dim-panel" id="dim-bottom"></div>
+    <div class="focus-guide" id="focus-guide"></div>
+    <div id="prompter-scroll"><div id="prompter-text"></div></div>
+  </div>
+  <div id="countdown-overlay"><span id="countdown-num">3</span></div>
+  <div id="toast"></div>
+  <div class="prompter-bottom" id="prompter-bottom">
+    <div class="ctrl-row">
+      <button class="ctrl-btn" onclick="markerJump(-1)">⏮</button>
+      <button class="ctrl-btn" onclick="adjustSpeed(-10)">🐢</button>
+      <button class="ctrl-btn big" id="play-btn" onclick="togglePlay()">▶</button>
+      <button class="ctrl-btn" onclick="adjustSpeed(10)">🐇</button>
+      <button class="ctrl-btn" onclick="markerJump(1)">⏭</button>
+    </div>
+    <div class="ctrl-row">
+      <button class="ctrl-btn" onclick="resetScroll()" style="font-size:15px;">↺ topo</button>
+      <button class="ctrl-btn" onclick="toggleMirror('h')" id="mirh-btn" style="font-size:15px;">⇋ espelho</button>
+      <button class="ctrl-btn" onclick="toggleFocusGuide()" id="fg-btn" style="font-size:15px;">— guia</button>
+      <button class="ctrl-btn" onclick="toggleQuickPanel()" style="font-size:15px;">⋯ ajustes</button>
+    </div>
+    <div id="quick-panel" style="display:none;">
+      <div class="slider-row"><label>Velocidade</label><input type="range" id="q-speed" min="10" max="400" oninput="setSpeed(+this.value)"><span id="q-speed-val" style="width:40px;font-size:11px;"></span></div>
+      <div class="slider-row"><label>Fonte</label><input type="range" id="q-font" min="18" max="90" oninput="setFontSize(+this.value)"><span id="q-font-val" style="width:40px;font-size:11px;"></span></div>
+      <div class="slider-row"><label>Opacidade</label><input type="range" id="q-dim" min="0" max="90" oninput="setDim(+this.value)"><span id="q-dim-val" style="width:40px;font-size:11px;"></span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== SETTINGS ===================== -->
+<div id="screen-settings" class="screen">
+  <div class="topbar">
+    <button class="iconbtn" onclick="closeSettings()">←</button>
+    <div class="sub">Configurações</div>
+    <div style="width:40px;"></div>
+  </div>
+  <div class="tabs">
+    <button class="tab active" data-tab="tab-aparencia" onclick="switchTab('tab-aparencia')">Aparência</button>
+    <button class="tab" data-tab="tab-leitura" onclick="switchTab('tab-leitura')">Leitura</button>
+    <button class="tab" data-tab="tab-controle" onclick="switchTab('tab-controle')">Controle Remoto</button>
+    <button class="tab" data-tab="tab-sobre" onclick="switchTab('tab-sobre')">Sobre</button>
+  </div>
+  <div class="content">
+
+    <!-- APARENCIA -->
+    <div class="tabpanel active" id="tab-aparencia">
+      <div class="section-title">Cores</div>
+      <div class="setting-row">
+        <div class="lbl">Presets</div>
+        <div class="color-swatches" id="color-presets"></div>
+      </div>
+      <div class="section-title">Texto</div>
+      <div class="setting-row">
+        <div class="lbl">Fonte <span class="val" id="v-fontfamily"></span></div>
+        <div class="seg" id="seg-fontfamily">
+          <button data-v="system" onclick="setSetting('fontFamily','system')">Padrão</button>
+          <button data-v="serif" onclick="setSetting('fontFamily','serif')">Serif</button>
+          <button data-v="mono" onclick="setSetting('fontFamily','mono')">Mono</button>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div class="lbl">Alinhamento <span class="val" id="v-align"></span></div>
+        <div class="seg" id="seg-align">
+          <button data-v="left" onclick="setSetting('align','left')">Esquerda</button>
+          <button data-v="center" onclick="setSetting('align','center')">Centro</button>
+        </div>
+      </div>
+      <div class="setting-row"><div class="lbl">Tamanho da fonte <span class="val" id="v-fontSize"></span></div><input type="range" min="18" max="90" id="s-fontSize" oninput="setSetting('fontSize',+this.value)"></div>
+      <div class="setting-row"><div class="lbl">Entrelinha <span class="val" id="v-lineHeight"></span></div><input type="range" min="10" max="22" id="s-lineHeight" oninput="setSetting('lineHeight',+this.value/10)"></div>
+      <div class="setting-row"><div class="lbl">Espaçamento entre letras <span class="val" id="v-letterSpacing"></span></div><input type="range" min="0" max="10" id="s-letterSpacing" oninput="setSetting('letterSpacing',+this.value)"></div>
+      <div class="setting-row"><div class="lbl">Largura da coluna <span class="val" id="v-colWidth"></span></div><input type="range" min="40" max="100" id="s-colWidth" oninput="setSetting('colWidth',+this.value)"></div>
+
+      <div class="section-title">Espelhamento (rig com vidro)</div>
+      <div class="setting-row" style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="lbl" style="margin:0;">Espelhar horizontal</div>
+        <div class="toggle-sw" id="tg-mirrorH" onclick="toggleSetting('mirrorH')"></div>
+      </div>
+      <div class="setting-row" style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="lbl" style="margin:0;">Espelhar vertical</div>
+        <div class="toggle-sw" id="tg-mirrorV" onclick="toggleSetting('mirrorV')"></div>
+      </div>
+
+      <div class="section-title">Guia de leitura</div>
+      <div class="setting-row" style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="lbl" style="margin:0;">Mostrar linha guia</div>
+        <div class="toggle-sw" id="tg-focusGuide" onclick="toggleSetting('focusGuide')"></div>
+      </div>
+      <div class="setting-row"><div class="lbl">Posição da guia <span class="val" id="v-focusPos"></span></div><input type="range" min="15" max="80" id="s-focusPos" oninput="setSetting('focusGuidePos',+this.value)"></div>
+      <div class="setting-row"><div class="lbl">Escurecer fora da guia <span class="val" id="v-focusDim"></span></div><input type="range" min="0" max="90" id="s-focusDim" oninput="setSetting('focusGuideDim',+this.value)"></div>
+    </div>
+
+    <!-- LEITURA -->
+    <div class="tabpanel" id="tab-leitura">
+      <div class="section-title">Velocidade</div>
+      <div class="setting-row"><div class="lbl">Velocidade de rolagem <span class="val" id="v-speed"></span></div><input type="range" min="10" max="400" id="s-speed" oninput="setSetting('speed',+this.value)"></div>
+      <div class="setting-row">
+        <div class="lbl">Calcular pela duração desejada</div>
+        <div class="row">
+          <input type="number" id="calc-minutes" placeholder="minutos" style="flex:1; background:var(--panel); border:1px solid var(--border); color:#fff; border-radius:8px; padding:8px;">
+          <button class="btn" onclick="calcSpeedFromMinutes()">Calcular</button>
+        </div>
+      </div>
+      <div class="setting-row"><div class="lbl">Palavras por minuto (estimativa) <span class="val" id="v-wpm"></span></div><input type="range" min="80" max="220" id="s-wpm" oninput="setSetting('wpm',+this.value)"></div>
+
+      <div class="section-title">Contagem regressiva</div>
+      <div class="setting-row"><div class="lbl">Segundos antes de iniciar <span class="val" id="v-countdown"></span></div><input type="range" min="0" max="10" id="s-countdown" oninput="setSetting('countdownSeconds',+this.value)"></div>
+      <div class="setting-row" style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="lbl" style="margin:0;">Bipe na contagem</div>
+        <div class="toggle-sw" id="tg-countdownBeep" onclick="toggleSetting('countdownBeep')"></div>
+      </div>
+
+      <div class="section-title">Tela</div>
+      <div class="setting-row" style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="lbl" style="margin:0;">Manter tela sempre ligada</div>
+        <div class="toggle-sw" id="tg-wakeLock" onclick="toggleSetting('wakeLock')"></div>
+      </div>
+    </div>
+
+    <!-- CONTROLE REMOTO -->
+    <div class="tabpanel" id="tab-controle">
+      <div class="section-title">Status do controle</div>
+      <div class="gp-status">
+        <div class="gp-dot" id="gp-status-dot"></div>
+        <div style="flex:1;">
+          <div style="font-weight:600; font-size:14px;" id="gp-status-name">Nenhum controle pareado</div>
+          <div style="font-size:12px; color:var(--muted);">Pareie o controle Bluetooth em Ajustes › Bluetooth do iPhone, depois volte aqui.</div>
+        </div>
+      </div>
+
+      <div class="section-title">Teste ao vivo (identifique os botões)</div>
+      <div class="gp-live" id="gp-live"></div>
+
+      <div class="section-title">Mapeamento de ações</div>
+      <div id="map-rows"></div>
+      <button class="btn primary" style="width:100%; margin-top:8px;" onclick="startLearn()">+ Atribuir novo botão</button>
+      <div class="hint-marker" style="margin-top:10px;">Toque em "Atribuir novo botão", depois pressione o botão ou direção do controle que quer configurar. Cada controle salva seu próprio mapeamento.</div>
+
+      <div class="section-title">Atalhos de teclado (teclado externo/desktop)</div>
+      <div class="hint-marker">Espaço = Play/Pause · ↑/↓ = Velocidade · ←/→ = Fonte · R = Reiniciar · M = Espelhar · G = Guia de leitura · Esc = Sair</div>
+    </div>
+
+    <!-- SOBRE -->
+    <div class="tabpanel" id="tab-sobre">
+      <div class="section-title">Teleprompter Puro</div>
+      <div class="hint-marker" style="font-size:13px; line-height:1.6;">
+        App de teleprompter local, sem conexão com servidor — tudo salvo no seu iPhone.<br><br>
+        Funciona instalado na tela de início (Compartilhar → Adicionar à Tela de Início) como um app quase nativo, em tela cheia.<br><br>
+        Suporta controle Bluetooth tipo gamepad/joystick: cada botão e direção pode ser configurado com uma função diferente na aba "Controle Remoto".
+      </div>
+      <div class="section-title">Dados</div>
+      <button class="btn danger" style="width:100%;" onclick="wipeAll()">Apagar todos os dados do app</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- LEARN MODAL -->
+<div id="learn-modal">
+  <div class="pulse"></div>
+  <div style="font-size:18px; font-weight:700; margin-bottom:8px;">Pressione o botão do controle</div>
+  <div style="font-size:13px; color:var(--muted);">Aguardando entrada do controle Bluetooth...</div>
+  <button class="btn" style="margin-top:30px;" onclick="cancelLearn()">Cancelar</button>
+</div>
+
+<script>
+/* ================= ESTADO ================= */
+const STORAGE_KEY = 'tp_puro_v1';
+const DEFAULT_SETTINGS = {
+  fontSize:42, fontFamily:'system', lineHeight:1.4, letterSpacing:0, align:'center', colWidth:86,
+  colorBg:'#000000', colorText:'#ffffff', colorPreset:'classic-dark',
+  mirrorH:false, mirrorV:false,
+  focusGuide:true, focusGuidePos:40, focusGuideDim:55,
+  speed:60, wpm:140, countdownSeconds:3, countdownBeep:true, wakeLock:true
+};
+let state = loadState();
+
+function loadState(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if(raw) return Object.assign({ scripts:[], settings:{...DEFAULT_SETTINGS}, remoteProfiles:{} }, raw, { settings: Object.assign({...DEFAULT_SETTINGS}, raw.settings||{}) });
+  }catch(e){}
+  return { scripts:[], settings:{...DEFAULT_SETTINGS}, remoteProfiles:{} };
+}
+function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+const COLOR_PRESETS = [
+  {id:'classic-dark', bg:'#000000', text:'#ffffff'},
+  {id:'classic-green', bg:'#000000', text:'#22c55e'},
+  {id:'classic-amber', bg:'#000000', text:'#f59e0b'},
+  {id:'high-contrast', bg:'#000000', text:'#ffff00'},
+  {id:'light', bg:'#ffffff', text:'#000000'},
+  {id:'navy', bg:'#0a1128', text:'#e0e7ff'},
+];
+
+const ACTIONS = [
+  ['none','Nenhuma ação'],
+  ['playPause','Play / Pause'],
+  ['speedUp','Aumentar velocidade'],
+  ['speedDown','Diminuir velocidade'],
+  ['fontUp','Aumentar fonte'],
+  ['fontDown','Diminuir fonte'],
+  ['resetTop','Voltar ao início'],
+  ['jumpEnd','Ir para o final'],
+  ['markerNext','Próxima marcação'],
+  ['markerPrev','Marcação anterior'],
+  ['mirrorH','Espelhar horizontal (alternar)'],
+  ['mirrorV','Espelhar vertical (alternar)'],
+  ['focusGuide','Guia de leitura (alternar)'],
+  ['countdownPlay','Contagem regressiva + play'],
+  ['dimUp','Escurecer mais as bordas'],
+  ['dimDown','Escurecer menos as bordas'],
+  ['quickPanel','Abrir/fechar ajustes rápidos'],
+  ['exitPrompter','Sair para o menu'],
+];
+const ACTION_MAP = Object.fromEntries(ACTIONS);
+
+let currentScriptId = null;
+let currentEditId = null;
+
+/* ================= NAVEGAÇÃO ================= */
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+function openSettings(){ renderSettings(); showScreen('screen-settings'); }
+function closeSettings(){ showScreen('screen-home'); renderHome(); }
+function switchTab(tab){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
+  document.querySelectorAll('.tabpanel').forEach(p=>p.classList.toggle('active', p.id===tab));
+  if(tab==='tab-controle') renderGpMapUI();
+}
+
+/* ================= HOME / ROTEIROS ================= */
+function renderHome(){
+  const list = document.getElementById('home-list');
+  document.getElementById('home-sub').textContent = state.scripts.length + ' roteiro(s)';
+  if(state.scripts.length===0){
+    list.innerHTML = '<div class="empty-hint">Nenhum roteiro ainda.<br>Toque no + para criar o primeiro.</div>';
+    return;
+  }
+  list.innerHTML = state.scripts.slice().sort((a,b)=>b.updatedAt-a.updatedAt).map(s=>{
+    const words = wordCount(s.body);
+    return `<div class="script-card">
+      <div class="info" onclick="editScript('${s.id}')">
+        <div class="title">${escapeHtml(s.title||'Sem título')}</div>
+        <div class="meta">${words} palavras · ${new Date(s.updatedAt).toLocaleDateString('pt-BR')}</div>
+      </div>
+      <div class="actions">
+        <button onclick="startPrompter('${s.id}')">▶</button>
+        <button onclick="duplicateScript('${s.id}')">⧉</button>
+        <button onclick="deleteScript('${s.id}')">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function wordCount(text){ return (text||'').trim().split(/\s+/).filter(Boolean).length; }
+function escapeHtml(s){ return (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function createScript(){
+  const s = { id: 'sc_'+Date.now(), title:'Novo roteiro', body:'', createdAt:Date.now(), updatedAt:Date.now() };
+  state.scripts.push(s); saveState();
+  editScript(s.id);
+}
+function editScript(id){
+  currentEditId = id;
+  const s = state.scripts.find(x=>x.id===id);
+  document.getElementById('editor-title').value = s.title;
+  document.getElementById('editor-body').value = s.body;
+  updateEditorCount();
+  showScreen('screen-editor');
+}
+function saveEditor(){
+  const s = state.scripts.find(x=>x.id===currentEditId);
+  if(!s) return;
+  s.title = document.getElementById('editor-title').value;
+  s.body = document.getElementById('editor-body').value;
+  s.updatedAt = Date.now();
+  saveState();
+  updateEditorCount();
+}
+function updateEditorCount(){
+  document.getElementById('editor-count').textContent = wordCount(document.getElementById('editor-body').value) + ' palavras';
+}
+function closeEditor(){ showScreen('screen-home'); renderHome(); }
+function goPrompterFromEditor(){ startPrompter(currentEditId); }
+function duplicateScript(id){
+  const s = state.scripts.find(x=>x.id===id);
+  const copy = { ...s, id:'sc_'+Date.now(), title:s.title+' (cópia)', createdAt:Date.now(), updatedAt:Date.now() };
+  state.scripts.push(copy); saveState(); renderHome();
+}
+function deleteScript(id){
+  if(!confirm('Apagar este roteiro?')) return;
+  state.scripts = state.scripts.filter(x=>x.id!==id);
+  saveState(); renderHome();
+}
+function wipeAll(){
+  if(!confirm('Isso apaga TODOS os roteiros e configurações. Continuar?')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  state = loadState();
+  renderHome(); closeSettings();
+}
+
+/* ================= PROMPTER ================= */
+let scrollY = 0, playing = false, rafId = null, lastT = 0;
+let markers = []; // {name, offset}
+let scriptWordCount = 0;
+let mirrorH=false, mirrorV=false;
+let wakeLockObj = null, noSleepVideo = null;
+
+function startPrompter(id){
+  const s = state.scripts.find(x=>x.id===id);
+  if(!s) return;
+  currentScriptId = id;
+  document.getElementById('ptop-title').textContent = s.title || 'Roteiro';
+  buildPrompterText(s.body);
+  applyAllSettings();
+  scrollY = 0; playing = false;
+  document.getElementById('prompter-scroll').style.transform = '';
+  updatePlayBtn();
+  showScreen('screen-prompter');
+  requestAnimationFrame(()=>{ layoutPrompter(); });
+  enableWakeLock();
+  showControls();
+}
+function buildPrompterText(body){
+  scriptWordCount = wordCount(body);
+  const lines = (body||'').split('\n');
+  markers = [];
+  let html = '';
+  lines.forEach((line, i)=>{
+    const m = line.match(/^\s*\[\[(.+?)\]\]\s*$/);
+    if(m){
+      const mid = 'mk_'+markers.length;
+      markers.push({ name:m[1], id:mid, offset:0 });
+      html += `<span class="marker" id="${mid}"></span>`;
+    } else {
+      html += escapeHtml(line) + (i<lines.length-1?'\n':'');
+    }
+  });
+  document.getElementById('prompter-text').innerHTML = html;
+}
+function layoutPrompter(){
+  const vpH = document.getElementById('prompter-viewport').clientHeight;
+  markers.forEach(m=>{
+    const el = document.getElementById(m.id);
+    if(el) m.offset = el.offsetTop;
+  });
+}
+function exitPrompter(){
+  playing = false;
+  cancelAnimationFrame(rafId);
+  disableWakeLock();
+  showScreen('screen-home'); renderHome();
+}
+
+function togglePlay(){
+  if(playing){ pausePrompter(); }
+  else {
+    const secs = state.settings.countdownSeconds;
+    if(secs>0) startCountdown(secs, playPrompter);
+    else playPrompter();
+  }
+}
+function playPrompter(){ playing = true; lastT = performance.now(); updatePlayBtn(); rafId = requestAnimationFrame(loop); }
+function pausePrompter(){ playing = false; cancelAnimationFrame(rafId); updatePlayBtn(); }
+function updatePlayBtn(){ document.getElementById('play-btn').textContent = playing ? '❚❚' : '▶'; }
+
+function loop(t){
+  if(!playing) return;
+  const dt = Math.min(0.1, (t - lastT)/1000);
+  lastT = t;
+  scrollY += state.settings.speed * dt;
+  applyScroll();
+  rafId = requestAnimationFrame(loop);
+}
+function applyScroll(){
+  const el = document.getElementById('prompter-scroll');
+  const vp = document.getElementById('prompter-viewport');
+  const maxScroll = Math.max(0, el.scrollHeight - vp.clientHeight);
+  if(scrollY < 0) scrollY = 0;
+  if(scrollY > maxScroll + vp.clientHeight*0.3) scrollY = maxScroll + vp.clientHeight*0.3;
+  el.style.marginTop = (-scrollY) + 'px';
+  const pct = maxScroll>0 ? Math.min(100, (scrollY/maxScroll)*100) : 0;
+  document.getElementById('progress-bar').style.width = pct + '%';
+  const elapsed = scrollY / state.settings.speed;
+  const total = (maxScroll>0?maxScroll:1) / state.settings.speed;
+  document.getElementById('time-pill').textContent = fmtTime(elapsed) + ' / ' + fmtTime(total);
+}
+function fmtTime(s){ s=Math.max(0,Math.round(s)); return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0'); }
+function resetScroll(){ scrollY = 0; applyScroll(); toast('Voltou ao início'); }
+function jumpEnd(){
+  const el = document.getElementById('prompter-scroll');
+  const vp = document.getElementById('prompter-viewport');
+  scrollY = Math.max(0, el.scrollHeight - vp.clientHeight);
+  applyScroll();
+}
+function adjustSpeed(delta){ setSpeed(state.settings.speed + delta); }
+function setSpeed(v){
+  state.settings.speed = Math.max(5, Math.min(500, Math.round(v)));
+  saveState();
+  syncQuickPanel();
+  toast('Velocidade: ' + state.settings.speed + ' px/s');
+}
+function adjustFont(delta){ setFontSize(state.settings.fontSize + delta); }
+function setFontSize(v){
+  state.settings.fontSize = Math.max(14, Math.min(120, Math.round(v)));
+  saveState();
+  applyAllSettings(); syncQuickPanel();
+  toast('Fonte: ' + state.settings.fontSize + 'px');
+}
+function setDim(v){
+  state.settings.focusGuideDim = Math.max(0, Math.min(95, Math.round(v)));
+  saveState(); applyAllSettings(); syncQuickPanel();
+}
+function calcSpeedFromMinutes(){
+  const mins = +document.getElementById('calc-minutes').value;
+  if(!mins || mins<=0) return;
+  const s = state.scripts.find(x=>x.id===currentEditId) || state.scripts.find(x=>x.id===currentScriptId);
+  const words = s ? wordCount(s.body) : 0;
+  if(!words) { toast('Roteiro vazio'); return; }
+  const wpm = words / mins;
+  // aproximação: converte para px/s usando a fonte atual (~ altura de linha por N palavras)
+  const approxPxPerWord = (state.settings.fontSize * state.settings.lineHeight) / 8;
+  const totalPx = words * approxPxPerWord;
+  const pxPerSec = totalPx / (mins*60);
+  setSetting('speed', Math.max(10, Math.min(400, Math.round(pxPerSec))));
+  toast('Velocidade calculada p/ ' + mins + ' min');
+}
+
+function toggleMirror(axis){
+  if(axis==='h') setSetting('mirrorH', !state.settings.mirrorH);
+  else setSetting('mirrorV', !state.settings.mirrorV);
+}
+function toggleFocusGuide(){ setSetting('focusGuide', !state.settings.focusGuide); }
+
+function markerJump(dir){
+  if(markers.length===0){ toast('Sem marcações neste roteiro'); return; }
+  layoutPrompter();
+  const vp = document.getElementById('prompter-viewport');
+  const targetScroll = scrollY;
+  let candidates = markers.map(m=>m.offset - vp.clientHeight*0.4);
+  let next;
+  if(dir>0){ next = candidates.find(o=>o > targetScroll+5); if(next===undefined) next = candidates[candidates.length-1]; }
+  else { next = [...candidates].reverse().find(o=>o < targetScroll-5); if(next===undefined) next = candidates[0]; }
+  scrollY = Math.max(0, next);
+  applyScroll();
+  toast(dir>0?'Próxima marcação':'Marcação anterior');
+}
+
+function toggleQuickPanel(){
+  const p = document.getElementById('quick-panel');
+  p.style.display = p.style.display==='none' ? 'block' : 'none';
+  syncQuickPanel();
+}
+function syncQuickPanel(){
+  document.getElementById('q-speed').value = state.settings.speed;
+  document.getElementById('q-speed-val').textContent = state.settings.speed;
+  document.getElementById('q-font').value = state.settings.fontSize;
+  document.getElementById('q-font-val').textContent = state.settings.fontSize;
+  document.getElementById('q-dim').value = state.settings.focusGuideDim;
+  document.getElementById('q-dim-val').textContent = state.settings.focusGuideDim+'%';
+}
+
+let controlsVisible = true, hideTimer = null;
+function showControls(){
+  controlsVisible = true;
+  document.getElementById('prompter-top').classList.remove('hidden');
+  document.getElementById('prompter-bottom').classList.remove('hidden');
+  clearTimeout(hideTimer);
+  hideTimer = setTimeout(()=>{
+    document.getElementById('prompter-top').classList.add('hidden');
+    document.getElementById('prompter-bottom').classList.add('hidden');
+  }, 4000);
+}
+document.getElementById('prompter-viewport').addEventListener('click', ()=>{ showControls(); });
+
+function startCountdown(secs, cb){
+  const ov = document.getElementById('countdown-overlay');
+  const num = document.getElementById('countdown-num');
+  ov.classList.add('active');
+  let n = secs;
+  num.textContent = n;
+  if(state.settings.countdownBeep) beep();
+  const iv = setInterval(()=>{
+    n--;
+    if(n<=0){ clearInterval(iv); ov.classList.remove('active'); cb(); return; }
+    num.textContent = n;
+    if(state.settings.countdownBeep) beep();
+  }, 1000);
+}
+let audioCtx = null;
+function beep(){
+  try{
+    audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+    o.connect(g); g.connect(audioCtx.destination);
+    o.frequency.value = 880; g.gain.value = 0.15;
+    o.start(); o.stop(audioCtx.currentTime + 0.12);
+  }catch(e){}
+}
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._tm);
+  t._tm = setTimeout(()=>t.classList.remove('show'), 1400);
+}
+
+/* ================= APLICAR CONFIG ================= */
+function applyAllSettings(){
+  const st = state.settings;
+  const root = document.documentElement.style;
+  root.setProperty('--font-size', st.fontSize+'px');
+  root.setProperty('--line-height', st.lineHeight);
+  root.setProperty('--letter-spacing', st.letterSpacing+'px');
+  root.setProperty('--col-width', st.colWidth+'%');
+  root.setProperty('--align', st.align);
+  root.setProperty('--bg', st.colorBg);
+  root.setProperty('--text', st.colorText);
+
+  const textEl = document.getElementById('prompter-text');
+  textEl.className = 'font-'+ (st.fontFamily==='system'?'':st.fontFamily);
+
+  const vp = document.getElementById('prompter-viewport');
+  vp.classList.toggle('mh', st.mirrorH);
+  vp.classList.toggle('mv', st.mirrorV);
+
+  document.getElementById('focus-guide').classList.toggle('on', st.focusGuide);
+  document.getElementById('focus-guide').style.top = st.focusGuidePos + '%';
+  document.getElementById('dim-top').style.setProperty('--dim', st.focusGuide ? st.focusGuideDim/100 : 0);
+  document.getElementById('dim-bottom').style.setProperty('--dim', st.focusGuide ? st.focusGuideDim/100 : 0);
+  document.getElementById('dim-top').style.height = st.focusGuidePos + '%';
+  document.getElementById('dim-bottom').style.height = (100-st.focusGuidePos) + '%';
+
+  document.getElementById('mirh-btn').style.color = st.mirrorH ? 'var(--accent)' : '#fff';
+  document.getElementById('fg-btn').style.color = st.focusGuide ? 'var(--accent)' : '#fff';
+}
+
+/* ================= WAKE LOCK ================= */
+async function enableWakeLock(){
+  if(!state.settings.wakeLock) return;
+  try{
+    if('wakeLock' in navigator){
+      wakeLockObj = await navigator.wakeLock.request('screen');
+      return;
+    }
+  }catch(e){}
+  // fallback: video mudo em loop (funciona em iOS mais antigo)
+  if(!noSleepVideo){
+    noSleepVideo = document.createElement('video');
+    noSleepVideo.setAttribute('playsinline',''); noSleepVideo.muted = true; noSleepVideo.loop = true;
+    noSleepVideo.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;';
+    noSleepVideo.src = 'data:video/mp4;base64,AAAAHGZ0eXBpc29tAAACAGlzb21pc28yYXZjMQAAAAhmcmVlAAAAtG1kYXQAAAGzABAHAAABthBgloB9EQEcYh3IhqYAAAADAGAAA8QMDcCsC1BiwYwYCsFtCmp+xNfj8ETQmr4/BeVfhwR8/A+9x6ma91DhBLg=';
+    document.body.appendChild(noSleepVideo);
+  }
+  noSleepVideo.play().catch(()=>{});
+}
+function disableWakeLock(){
+  if(wakeLockObj){ wakeLockObj.release().catch(()=>{}); wakeLockObj = null; }
+  if(noSleepVideo){ noSleepVideo.pause(); }
+}
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='visible' && document.getElementById('screen-prompter').classList.contains('active')) enableWakeLock();
+});
+
+/* ================= SETTINGS UI ================= */
+function setSetting(key, value){
+  state.settings[key] = value;
+  saveState();
+  applyAllSettings();
+  renderSettings();
+}
+function toggleSetting(key){ setSetting(key, !state.settings[key]); }
+
+function renderSettings(){
+  const st = state.settings;
+  document.getElementById('color-presets').innerHTML = COLOR_PRESETS.map(p=>
+    `<div class="swatch ${st.colorPreset===p.id?'sel':''}" style="background:${p.bg}; box-shadow:inset 0 0 0 2px ${p.text}" onclick="applyColorPreset('${p.id}')"></div>`
+  ).join('');
+
+  document.getElementById('seg-fontfamily').querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.v===st.fontFamily));
+  document.getElementById('seg-align').querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.v===st.align));
+
+  setRange('s-fontSize','v-fontSize', st.fontSize, v=>v+'px');
+  setRange('s-lineHeight','v-lineHeight', Math.round(st.lineHeight*10), ()=>st.lineHeight.toFixed(1));
+  setRange('s-letterSpacing','v-letterSpacing', st.letterSpacing, v=>v+'px');
+  setRange('s-colWidth','v-colWidth', st.colWidth, v=>v+'%');
+  setRange('s-focusPos','v-focusPos', st.focusGuidePos, v=>v+'%');
+  setRange('s-focusDim','v-focusDim', st.focusGuideDim, v=>v+'%');
+  setRange('s-speed','v-speed', st.speed, v=>v+' px/s');
+  setRange('s-wpm','v-wpm', st.wpm, v=>v+' wpm');
+  setRange('s-countdown','v-countdown', st.countdownSeconds, v=>v+'s');
+
+  document.getElementById('tg-mirrorH').classList.toggle('on', st.mirrorH);
+  document.getElementById('tg-mirrorV').classList.toggle('on', st.mirrorV);
+  document.getElementById('tg-focusGuide').classList.toggle('on', st.focusGuide);
+  document.getElementById('tg-countdownBeep').classList.toggle('on', st.countdownBeep);
+  document.getElementById('tg-wakeLock').classList.toggle('on', st.wakeLock);
+}
+function setRange(inputId, valId, val, fmt){
+  document.getElementById(inputId).value = val;
+  document.getElementById(valId).textContent = fmt(val);
+}
+function applyColorPreset(id){
+  const p = COLOR_PRESETS.find(x=>x.id===id);
+  state.settings.colorPreset = id; state.settings.colorBg = p.bg; state.settings.colorText = p.text;
+  saveState(); applyAllSettings(); renderSettings();
+}
+
+/* ================= GAMEPAD ================= */
+let gpIndex = -1;
+let gpPrevButtons = [];
+let gpPrevAxes = [];
+let gpLastId = '';
+let learnMode = false;
+let learnResolve = null;
+
+window.addEventListener('gamepadconnected', e=>{
+  gpIndex = e.gamepad.index;
+  gpLastId = e.gamepad.id;
+  updateGpStatus(true, e.gamepad.id);
+});
+window.addEventListener('gamepaddisconnected', ()=>{
+  gpIndex = -1;
+  updateGpStatus(false, '');
+});
+function updateGpStatus(on, name){
+  document.getElementById('gp-pill').textContent = on ? '🎮 ' + name.split('(')[0].trim().slice(0,18) : '🎮 —';
+  document.getElementById('gp-pill').classList.toggle('gp-on', on);
+  const dot = document.getElementById('gp-status-dot');
+  const label = document.getElementById('gp-status-name');
+  if(dot){ dot.classList.toggle('on', on); label.textContent = on ? name : 'Nenhum controle pareado'; }
+}
+
+function currentProfileKey(){ return gpLastId || 'default'; }
+function getProfile(){
+  const key = currentProfileKey();
+  if(!state.remoteProfiles[key]) state.remoteProfiles[key] = {};
+  return state.remoteProfiles[key];
+}
+
+function inputLabel(key){
+  if(key.startsWith('btn')) return 'Botão ' + key.slice(3);
+  if(key.startsWith('axis')){
+    const rest = key.slice(4);
+    const dir = rest.slice(-1);
+    const idx = rest.slice(0,-1);
+    return 'Eixo ' + idx + (dir==='+' ? ' (+)' : ' (-)');
+  }
+  return key;
+}
+
+function pollGamepad(){
+  if(gpIndex < 0){ requestAnimationFrame(pollGamepad); return; }
+  const gp = navigator.getGamepads()[gpIndex];
+  if(!gp){ requestAnimationFrame(pollGamepad); return; }
+
+  const btns = gp.buttons.map(b=>b.pressed || b.value>0.5);
+  const axes = gp.axes;
+
+  // aprendizado: captura qualquer entrada nova
+  if(learnMode){
+    for(let i=0;i<btns.length;i++){
+      if(btns[i] && !gpPrevButtons[i]){ finishLearn('btn'+i); break; }
+    }
+    for(let i=0;i<axes.length;i++){
+      if(axes[i] > 0.6 && !(gpPrevAxes[i] > 0.6)){ finishLearn('axis'+i+'+'); break; }
+      if(axes[i] < -0.6 && !(gpPrevAxes[i] < -0.6)){ finishLearn('axis'+i+'-'); break; }
+    }
+  } else if(document.getElementById('screen-prompter').classList.contains('active')){
+    const profile = getProfile();
+    for(let i=0;i<btns.length;i++){
+      if(btns[i] && !gpPrevButtons[i]) fireAction(profile['btn'+i]);
+    }
+    for(let i=0;i<axes.length;i++){
+      if(axes[i] > 0.6 && !(gpPrevAxes[i] > 0.6)) fireAction(profile['axis'+i+'+']);
+      if(axes[i] < -0.6 && !(gpPrevAxes[i] < -0.6)) fireAction(profile['axis'+i+'-']);
+    }
+  }
+
+  // painel de teste ao vivo (quando na tela de config)
+  if(document.getElementById('tab-controle').classList.contains('active')){
+    updateGpLive(btns, axes);
+  }
+
+  gpPrevButtons = btns;
+  gpPrevAxes = [...axes];
+  requestAnimationFrame(pollGamepad);
+}
+requestAnimationFrame(pollGamepad);
+
+function fireAction(actionId){
+  if(!actionId || actionId==='none') return;
+  switch(actionId){
+    case 'playPause': togglePlay(); break;
+    case 'speedUp': adjustSpeed(10); break;
+    case 'speedDown': adjustSpeed(-10); break;
+    case 'fontUp': adjustFont(2); break;
+    case 'fontDown': adjustFont(-2); break;
+    case 'resetTop': resetScroll(); break;
+    case 'jumpEnd': jumpEnd(); break;
+    case 'markerNext': markerJump(1); break;
+    case 'markerPrev': markerJump(-1); break;
+    case 'mirrorH': toggleMirror('h'); break;
+    case 'mirrorV': toggleMirror('v'); break;
+    case 'focusGuide': toggleFocusGuide(); break;
+    case 'countdownPlay': if(!playing) startCountdown(state.settings.countdownSeconds||3, playPrompter); break;
+    case 'dimUp': setDim(state.settings.focusGuideDim+10); break;
+    case 'dimDown': setDim(state.settings.focusGuideDim-10); break;
+    case 'quickPanel': toggleQuickPanel(); break;
+    case 'exitPrompter': exitPrompter(); break;
+  }
+  showControls();
+}
+
+function updateGpLive(btns, axes){
+  const el = document.getElementById('gp-live');
+  if(el._count !== btns.length+axes.length*2){
+    el._count = btns.length+axes.length*2;
+    let html = '';
+    for(let i=0;i<btns.length;i++) html += `<div class="cell" id="live-btn${i}">B${i}</div>`;
+    for(let i=0;i<axes.length;i++){ html += `<div class="cell" id="live-axisp${i}">E${i}+</div><div class="cell" id="live-axisn${i}">E${i}-</div>`; }
+    el.innerHTML = html;
+  }
+  for(let i=0;i<btns.length;i++){ const c=document.getElementById('live-btn'+i); if(c) c.classList.toggle('hot', btns[i]); }
+  for(let i=0;i<axes.length;i++){
+    const p=document.getElementById('live-axisp'+i); if(p) p.classList.toggle('hot', axes[i]>0.6);
+    const n=document.getElementById('live-axisn'+i); if(n) n.classList.toggle('hot', axes[i]<-0.6);
+  }
+}
+
+function renderGpMapUI(){
+  const profile = getProfile();
+  const rows = Object.keys(profile);
+  const el = document.getElementById('map-rows');
+  if(rows.length===0){ el.innerHTML = '<div class="empty-hint" style="padding:20px;">Nenhum botão configurado ainda para este controle.</div>'; return; }
+  el.innerHTML = rows.map(key=>{
+    const opts = ACTIONS.map(([id,label])=>`<option value="${id}" ${profile[key]===id?'selected':''}>${label}</option>`).join('');
+    return `<div class="map-row">
+      <div class="inp-label">${inputLabel(key)}</div>
+      <select onchange="setMapAction('${key}', this.value)">${opts}</select>
+      <button class="del" onclick="removeMapRow('${key}')">🗑</button>
+    </div>`;
+  }).join('');
+}
+function setMapAction(key, actionId){ getProfile()[key] = actionId; saveState(); }
+function removeMapRow(key){ delete getProfile()[key]; saveState(); renderGpMapUI(); }
+
+function startLearn(){
+  if(gpIndex<0){ toast('Nenhum controle conectado'); return; }
+  learnMode = true;
+  gpPrevButtons = []; gpPrevAxes = [];
+  document.getElementById('learn-modal').classList.add('active');
+}
+function cancelLearn(){ learnMode = false; document.getElementById('learn-modal').classList.remove('active'); }
+function finishLearn(rawKey){
+  learnMode = false;
+  document.getElementById('learn-modal').classList.remove('active');
+  const profile = getProfile();
+  if(!(rawKey in profile)) profile[rawKey] = 'none';
+  saveState();
+  renderGpMapUI();
+  toast('Capturado: ' + inputLabel(rawKey));
+}
+
+/* ================= TECLADO (fallback / desktop) ================= */
+document.addEventListener('keydown', e=>{
+  if(!document.getElementById('screen-prompter').classList.contains('active')) return;
+  switch(e.code){
+    case 'Space': e.preventDefault(); togglePlay(); break;
+    case 'ArrowUp': adjustSpeed(10); break;
+    case 'ArrowDown': adjustSpeed(-10); break;
+    case 'ArrowLeft': adjustFont(-2); break;
+    case 'ArrowRight': adjustFont(2); break;
+    case 'KeyR': resetScroll(); break;
+    case 'KeyM': toggleMirror('h'); break;
+    case 'KeyG': toggleFocusGuide(); break;
+    case 'Escape': exitPrompter(); break;
+  }
+});
+
+/* ================= INIT ================= */
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+applyAllSettings();
+renderHome();
+window.addEventListener('resize', ()=>{ if(document.getElementById('screen-prompter').classList.contains('active')) layoutPrompter(); });
+</script>
+</body>
+</html>
