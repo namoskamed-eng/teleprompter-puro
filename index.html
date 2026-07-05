@@ -318,7 +318,23 @@ select, textarea, input[type=text], input[type=number]{font-family:inherit;}
 
     <!-- CONTROLE REMOTO -->
     <div class="tabpanel" id="tab-controle">
-      <div class="section-title">Status do controle</div>
+      <div class="section-title">Controle tipo teclado (mais comum em kit de vidro de teleprompter)</div>
+      <div class="hint-marker" style="margin-bottom:10px;">A maioria dos controles simples que vêm junto com vidro de teleprompter na verdade se comporta como um <b>teclado Bluetooth</b>, não como um gamepad — por isso não aparecem no "Status do controle" mais abaixo. Pareie normalmente em Ajustes › Bluetooth, depois teste aqui.</div>
+      <div class="gp-status">
+        <div class="gp-dot" id="kb-status-dot"></div>
+        <div style="flex:1;">
+          <div style="font-weight:600; font-size:14px;" id="kb-last-key">Nenhuma tecla detectada ainda</div>
+          <div style="font-size:12px; color:var(--muted);">Aperte qualquer botão do controle agora — se ele aparecer aqui, seu controle é desse tipo.</div>
+        </div>
+      </div>
+
+      <div class="section-title">Mapeamento de teclas</div>
+      <div id="key-map-rows"></div>
+      <button class="btn primary" style="width:100%; margin-top:8px;" onclick="startKeyLearn()">+ Atribuir nova tecla</button>
+      <div class="hint-marker" style="margin-top:10px;">Toque em "Atribuir nova tecla", depois pressione o botão do controle que quer configurar. Já vem com atalhos padrão (setas, espaço, etc.) que você pode trocar.</div>
+
+      <div class="section-title">Controle tipo gamepad/joystick</div>
+      <div class="hint-marker" style="margin-bottom:10px;">Só se aplica se o seu controle for reconhecido como um controle de jogo de verdade (a maioria dos controles de vidro de teleprompter NÃO é — use a seção de teclado acima).</div>
       <div class="gp-status">
         <div class="gp-dot" id="gp-status-dot"></div>
         <div style="flex:1;">
@@ -334,9 +350,6 @@ select, textarea, input[type=text], input[type=number]{font-family:inherit;}
       <div id="map-rows"></div>
       <button class="btn primary" style="width:100%; margin-top:8px;" onclick="startLearn()">+ Atribuir novo botão</button>
       <div class="hint-marker" style="margin-top:10px;">Toque em "Atribuir novo botão", depois pressione o botão ou direção do controle que quer configurar. Cada controle salva seu próprio mapeamento.</div>
-
-      <div class="section-title">Atalhos de teclado (teclado externo/desktop)</div>
-      <div class="hint-marker">Espaço = Play/Pause · ↑/↓ = Velocidade · ←/→ = Fonte · R = Reiniciar · M = Espelhar · G = Guia de leitura · Esc = Sair</div>
     </div>
 
     <!-- SOBRE -->
@@ -357,9 +370,9 @@ select, textarea, input[type=text], input[type=number]{font-family:inherit;}
 <!-- LEARN MODAL -->
 <div id="learn-modal">
   <div class="pulse"></div>
-  <div style="font-size:18px; font-weight:700; margin-bottom:8px;">Pressione o botão do controle</div>
+  <div style="font-size:18px; font-weight:700; margin-bottom:8px;" id="learn-modal-title">Pressione o botão do controle</div>
   <div style="font-size:13px; color:var(--muted);">Aguardando entrada do controle Bluetooth...</div>
-  <button class="btn" style="margin-top:30px;" onclick="cancelLearn()">Cancelar</button>
+  <button class="btn" style="margin-top:30px;" onclick="cancelAnyLearn()">Cancelar</button>
 </div>
 
 <script>
@@ -372,14 +385,19 @@ const DEFAULT_SETTINGS = {
   focusGuide:true, focusGuidePos:40, focusGuideDim:55,
   speed:60, wpm:140, countdownSeconds:3, countdownBeep:true, wakeLock:true
 };
+const DEFAULT_KEYBOARD_PROFILE = {
+  'Space':'playPause', 'ArrowUp':'speedUp', 'ArrowDown':'speedDown',
+  'ArrowLeft':'fontDown', 'ArrowRight':'fontUp', 'KeyR':'resetTop',
+  'KeyM':'mirrorH', 'KeyG':'focusGuide', 'Escape':'exitPrompter'
+};
 let state = loadState();
 
 function loadState(){
   try{
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if(raw) return Object.assign({ scripts:[], settings:{...DEFAULT_SETTINGS}, remoteProfiles:{} }, raw, { settings: Object.assign({...DEFAULT_SETTINGS}, raw.settings||{}) });
+    if(raw) return Object.assign({ scripts:[], settings:{...DEFAULT_SETTINGS}, remoteProfiles:{}, keyboardProfile:{...DEFAULT_KEYBOARD_PROFILE} }, raw, { settings: Object.assign({...DEFAULT_SETTINGS}, raw.settings||{}), keyboardProfile: Object.assign({}, raw.keyboardProfile||DEFAULT_KEYBOARD_PROFILE) });
   }catch(e){}
-  return { scripts:[], settings:{...DEFAULT_SETTINGS}, remoteProfiles:{} };
+  return { scripts:[], settings:{...DEFAULT_SETTINGS}, remoteProfiles:{}, keyboardProfile:{...DEFAULT_KEYBOARD_PROFILE} };
 }
 function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
@@ -427,7 +445,7 @@ function closeSettings(){ showScreen('screen-home'); renderHome(); }
 function switchTab(tab){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
   document.querySelectorAll('.tabpanel').forEach(p=>p.classList.toggle('active', p.id===tab));
-  if(tab==='tab-controle') renderGpMapUI();
+  if(tab==='tab-controle'){ renderGpMapUI(); renderKeyMapUI(); }
 }
 
 /* ================= HOME / ROTEIROS ================= */
@@ -979,9 +997,10 @@ function setMapAction(key, actionId){ getProfile()[key] = actionId; saveState();
 function removeMapRow(key){ delete getProfile()[key]; saveState(); renderGpMapUI(); }
 
 function startLearn(){
-  if(gpIndex<0){ toast('Nenhum controle conectado'); return; }
+  if(gpIndex<0){ toast('Nenhum controle gamepad conectado'); return; }
   learnMode = true;
   gpPrevButtons = []; gpPrevAxes = [];
+  document.getElementById('learn-modal-title').textContent = 'Pressione o botão do controle';
   document.getElementById('learn-modal').classList.add('active');
 }
 function cancelLearn(){ learnMode = false; document.getElementById('learn-modal').classList.remove('active'); }
@@ -994,21 +1013,68 @@ function finishLearn(rawKey){
   renderGpMapUI();
   toast('Capturado: ' + inputLabel(rawKey));
 }
+function cancelAnyLearn(){
+  if(learnMode) cancelLearn();
+  if(keyLearnMode) cancelKeyLearn();
+}
 
-/* ================= TECLADO (fallback / desktop) ================= */
+/* ================= TECLADO (controles tipo teclado + fallback desktop) ================= */
+let keyLearnMode = false;
+const KEY_LABELS = {
+  Space:'Espaço', ArrowUp:'↑', ArrowDown:'↓', ArrowLeft:'←', ArrowRight:'→',
+  Enter:'Enter', Escape:'Esc', Tab:'Tab', Backspace:'Backspace',
+  PageUp:'Page Up', PageDown:'Page Down', Home:'Home', End:'End',
+  MediaPlayPause:'Play/Pause (mídia)', AudioVolumeUp:'Volume +', AudioVolumeDown:'Volume -'
+};
+function prettifyKey(code){
+  if(KEY_LABELS[code]) return KEY_LABELS[code];
+  if(/^Key[A-Z]$/.test(code)) return code.slice(3);
+  if(/^Digit[0-9]$/.test(code)) return code.slice(5);
+  return code;
+}
+function startKeyLearn(){
+  keyLearnMode = true;
+  document.getElementById('learn-modal-title').textContent = 'Pressione a tecla/botão do controle';
+  document.getElementById('learn-modal').classList.add('active');
+}
+function cancelKeyLearn(){ keyLearnMode = false; document.getElementById('learn-modal').classList.remove('active'); }
+function finishKeyLearn(code){
+  keyLearnMode = false;
+  document.getElementById('learn-modal').classList.remove('active');
+  if(!(code in state.keyboardProfile)) state.keyboardProfile[code] = 'none';
+  saveState();
+  renderKeyMapUI();
+  toast('Capturado: ' + prettifyKey(code));
+}
+function renderKeyMapUI(){
+  const rows = Object.keys(state.keyboardProfile);
+  const el = document.getElementById('key-map-rows');
+  if(rows.length===0){ el.innerHTML = '<div class="empty-hint" style="padding:20px;">Nenhuma tecla configurada ainda.</div>'; return; }
+  el.innerHTML = rows.map(code=>{
+    const opts = ACTIONS.map(([id,label])=>`<option value="${id}" ${state.keyboardProfile[code]===id?'selected':''}>${label}</option>`).join('');
+    return `<div class="map-row">
+      <div class="inp-label">${prettifyKey(code)}</div>
+      <select onchange="setKeyMapAction('${code}', this.value)">${opts}</select>
+      <button class="del" onclick="removeKeyMapRow('${code}')">🗑</button>
+    </div>`;
+  }).join('');
+}
+function setKeyMapAction(code, actionId){ state.keyboardProfile[code] = actionId; saveState(); }
+function removeKeyMapRow(code){ delete state.keyboardProfile[code]; saveState(); renderKeyMapUI(); }
+
 document.addEventListener('keydown', e=>{
-  if(!document.getElementById('screen-prompter').classList.contains('active')) return;
-  switch(e.code){
-    case 'Space': e.preventDefault(); togglePlay(); break;
-    case 'ArrowUp': adjustSpeed(10); break;
-    case 'ArrowDown': adjustSpeed(-10); break;
-    case 'ArrowLeft': adjustFont(-2); break;
-    case 'ArrowRight': adjustFont(2); break;
-    case 'KeyR': resetScroll(); break;
-    case 'KeyM': toggleMirror('h'); break;
-    case 'KeyG': toggleFocusGuide(); break;
-    case 'Escape': exitPrompter(); break;
+  const kbLastEl = document.getElementById('kb-last-key');
+  if(kbLastEl && document.getElementById('tab-controle') && document.getElementById('tab-controle').classList.contains('active')){
+    kbLastEl.textContent = 'Última tecla: ' + prettifyKey(e.code) + ' (' + e.code + ')';
+    const dot = document.getElementById('kb-status-dot');
+    if(dot){ dot.classList.add('on'); clearTimeout(dot._tm); dot._tm = setTimeout(()=>dot.classList.remove('on'), 2000); }
   }
+
+  if(keyLearnMode){ e.preventDefault(); finishKeyLearn(e.code); return; }
+
+  if(!document.getElementById('screen-prompter').classList.contains('active')) return;
+  const actionId = state.keyboardProfile[e.code];
+  if(actionId){ e.preventDefault(); fireAction(actionId); }
 });
 
 /* ================= INIT ================= */
