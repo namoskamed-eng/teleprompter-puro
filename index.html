@@ -63,7 +63,7 @@ body{
 
 /* ===== PROMPTER (leitura) ===== */
 #screen-prompter{background:var(--bg);}
-#prompter-viewport{flex:1; overflow:hidden; position:relative;}
+#prompter-viewport{flex:1; overflow:hidden; position:relative; touch-action:none;}
 #prompter-scroll{
   position:absolute; left:50%; top:0; width:var(--col-width);
   transform:translateX(-50%);
@@ -672,7 +672,30 @@ function showControls(){
     document.getElementById('prompter-bottom').classList.add('hidden');
   }, 4000);
 }
-document.getElementById('prompter-viewport').addEventListener('click', ()=>{ showControls(); });
+/* Arrastar o dedo sobre o texto para rolar manualmente (buscar posição) */
+let dragging = false, dragStartY = 0, dragStartScroll = 0;
+function isControlTarget(el){
+  return !!el.closest('.pill, .ctrl-btn, .prompter-top, .prompter-bottom, #quick-panel, #countdown-overlay');
+}
+const promptVp = document.getElementById('prompter-viewport');
+promptVp.addEventListener('pointerdown', e=>{
+  showControls();
+  if(isControlTarget(e.target)) return;
+  dragging = true;
+  dragStartY = e.clientY;
+  dragStartScroll = scrollY;
+  if(playing) pausePrompter();
+  promptVp.setPointerCapture(e.pointerId);
+});
+promptVp.addEventListener('pointermove', e=>{
+  if(!dragging) return;
+  const dy = e.clientY - dragStartY;
+  scrollY = dragStartScroll - dy;
+  applyScroll();
+  showControls();
+});
+promptVp.addEventListener('pointerup', ()=>{ dragging = false; });
+promptVp.addEventListener('pointercancel', ()=>{ dragging = false; });
 
 function startCountdown(secs, cb){
   const ov = document.getElementById('countdown-overlay');
@@ -852,9 +875,17 @@ function inputLabel(key){
 }
 
 function pollGamepad(){
+  if(gpIndex < 0){
+    // Fallback: o Safari no iOS nem sempre dispara 'gamepadconnected' de forma confiável,
+    // então varremos os slots diretamente a cada frame até achar um controle ativo.
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    for(let i=0;i<pads.length;i++){
+      if(pads[i]){ gpIndex = pads[i].index; gpLastId = pads[i].id; updateGpStatus(true, pads[i].id); break; }
+    }
+  }
   if(gpIndex < 0){ requestAnimationFrame(pollGamepad); return; }
   const gp = navigator.getGamepads()[gpIndex];
-  if(!gp){ requestAnimationFrame(pollGamepad); return; }
+  if(!gp){ gpIndex = -1; updateGpStatus(false, ''); requestAnimationFrame(pollGamepad); return; }
 
   const btns = gp.buttons.map(b=>b.pressed || b.value>0.5);
   const axes = gp.axes;
