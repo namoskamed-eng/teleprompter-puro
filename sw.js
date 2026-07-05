@@ -1,4 +1,4 @@
-const CACHE = 'tp-puro-v1';
+const CACHE = 'tp-puro-v2';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -13,13 +13,15 @@ self.addEventListener('activate', e => {
   self.clients.claim();
 });
 
+// Network-first: sempre busca a versão mais nova quando há conexão,
+// só usa o cache como fallback offline. Evita ficar preso numa versão antiga.
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request).then(res => {
+    fetch(e.request).then(res => {
       const copy = res.clone();
       caches.open(CACHE).then(c => c.put(e.request, copy));
       return res;
-    }).catch(() => cached))
+    }).catch(() => caches.match(e.request))
   );
 });

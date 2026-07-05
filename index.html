@@ -69,8 +69,7 @@ body{
   transform:translateX(-50%);
   padding-top:60vh; padding-bottom:80vh;
 }
-#prompter-scroll.mirror-h{ transform:translateX(-50%) scaleX(-1); }
-#prompter-scroll.mirror-v{ }
+#prompter-viewport.mh #prompter-scroll{ transform:translateX(-50%) scaleX(-1); }
 #prompter-viewport.mv #prompter-scroll{ transform:translateX(-50%) scaleY(-1); }
 #prompter-viewport.mv.mh #prompter-scroll{ transform:translateX(-50%) scale(-1,-1); }
 #prompter-text{
@@ -1079,7 +1078,12 @@ document.addEventListener('keydown', e=>{
 
 /* ================= INIT ================= */
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(()=>{});
+  navigator.serviceWorker.register('sw.js').then(reg => reg.update()).catch(()=>{});
+  // Recarrega automaticamente quando uma versão nova assume o controle,
+  // pra nunca mais ficar preso numa versão antiga em cache.
+  navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+    if(!window.__tpReloaded){ window.__tpReloaded = true; location.reload(); }
+  });
 }
 applyAllSettings();
 renderHome();
